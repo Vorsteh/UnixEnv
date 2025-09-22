@@ -1,0 +1,11 @@
+# Build folder
+build/
+
+# Executable
+mmake
+
+# Editor temporary files (optional, useful)
+*~
+*.swp
+*.bak
+
