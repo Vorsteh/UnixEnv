@@ -1,0 +1,13 @@
+# Compiled files
+*.o
+mexec
+
+# Logs
+*.log
+
+# Valgrind
+vgcore.*
+
+# Backup files
+*~
+
