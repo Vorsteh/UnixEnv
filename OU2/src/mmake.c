@@ -58,6 +58,11 @@ int main(int argc, char *argv[]) {
 
   int build_status = build_target(target_name, mf, force_rebuild, silent);
 
-  printf("%d", build_status);
+  if (!build_status) {
+    perror("build_target");
+    return EXIT_FAILURE;
+  }
+
+  makefile_del(mf);
   return EXIT_SUCCESS;
 }
