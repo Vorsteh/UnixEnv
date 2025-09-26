@@ -1,3 +1,4 @@
+#include "../include/build.h"
 #include "../include/parser.h"
 #include <bits/getopt_core.h>
 #include <getopt.h>
@@ -10,7 +11,7 @@ int main(int argc, char *argv[]) {
   FILE *file;
   char *filename = "mmakefile"; // [-f MAKEFILE]
   bool force_rebuild = false;   // [-B]
-  bool no_output = false;       // [-s]
+  bool silent = false;          // [-s]
   char **targets = NULL;        // [TARGET ...]
 
   int c;
@@ -23,7 +24,7 @@ int main(int argc, char *argv[]) {
       force_rebuild = true;
       break;
     case 's':
-      no_output = true;
+      silent = true;
       break;
     default:
       fprintf(stderr, "Usage: mmake [-f MAKEFILE] [-B] [-s] [TARGET ...]\n");
@@ -47,6 +48,7 @@ int main(int argc, char *argv[]) {
 
   int num_targets = argc - optind;
   const char *target_name;
+
   if (num_targets > 0) {
     targets = &argv[optind];
     target_name = targets[0];
@@ -54,18 +56,8 @@ int main(int argc, char *argv[]) {
     target_name = makefile_default_target(mf);
   }
 
-  rule *rule = makefile_rule(mf, target_name);
+  int build_status = build_target(target_name, mf, force_rebuild, silent);
 
-  const char **prereq = rule_prereq(rule);
-  char **cmd = rule_cmd(rule);
-
-  for (int i = 0; prereq[i] != NULL; i++) {
-    printf("Depends on: %s\n", prereq[i]);
-  }
-
-  for (int i = 0; cmd[i] != NULL; i++) {
-    printf("Command part: %s\n", cmd[i]);
-  }
-  printf("%d %d", no_output, force_rebuild);
+  printf("%d", build_status);
   return EXIT_SUCCESS;
 }
