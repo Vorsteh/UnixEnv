@@ -10,7 +10,7 @@
  * @date 2024-09-19
  */
 
-#include "../include/parser.h"
+#include "parser.h"
 #include <ctype.h>
 #include <stdbool.h>
 #include <stdio.h>

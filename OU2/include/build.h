@@ -3,7 +3,7 @@
 #ifndef BUILD_H
 #define BUILD_H
 
-#include "../include/parser.h"
+#include "parser.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <sys/stat.h>

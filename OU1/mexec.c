@@ -1,3 +1,11 @@
+/**
+ * Executes a series of commands using a pipeline
+ *
+ * @file mexec.c
+ * @author Emil Jönsson @c24ejn
+ * @version 1.1
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,7 +24,7 @@
  * Returns: FILE * to the opend file or stdin
  *          Returns NULL on error
  * */
-FILE *handleCmdLineArgs(int argc, char *argv[]);
+FILE *handle_CmdLine_Args(int argc, char *argv[]);
 
 /*
  * parse_line - Splits lines into array of arguments
@@ -70,6 +78,8 @@ int **pipes_setup(int commands_amount);
  * @param commands_amount   Number of commands
  * @param pipes             Array of pipes
  *
+ * Allocates memory which should be freed using the cleanup function.
+ *
  * @return void
  * */
 void fork_setup(char ***commands, int commands_amount, int **pipes);
@@ -99,7 +109,7 @@ void cleanup(FILE *file, char ***commands, int commands_amount, int **pipes);
 
 int main(int argc, char *argv[]) {
 
-  FILE *file = handleCmdLineArgs(argc, argv);
+  FILE *file = handle_CmdLine_Args(argc, argv);
 
   if (!file)
     return EXIT_FAILURE;
@@ -116,7 +126,7 @@ int main(int argc, char *argv[]) {
   return EXIT_SUCCESS;
 }
 
-FILE *handleCmdLineArgs(int argc, char *argv[]) {
+FILE *handle_CmdLine_Args(int argc, char *argv[]) {
 
   // More then two arguments print usage message
   if (argc > 2) {
@@ -155,6 +165,10 @@ char **parse_line(char *buffer) {
   // Loop over and save duplicate each token to args
   while (tokens != NULL) {
     args[i] = strdup(tokens);
+    if (args[i] == NULL) {
+      perror(args[i]);
+      exit(EXIT_FAILURE);
+    }
     i++;
     tokens = strtok(NULL, " \t\n");
   }
@@ -179,7 +193,7 @@ char ***commands_setup(FILE *file, int *commands_amount) {
   char ***commands = NULL;
 
   // read entire file or stdin
-  while (fgets(line, MAX_LINE, file)) {
+  while (fgets(line, MAX_LINE, file) != NULL) {
 
     // parse each line into array of arguments
     char **args = parse_line(line);
@@ -256,9 +270,15 @@ void fork_setup(char ***commands, int commands_amount, int **pipes) {
     // it actaully outputs something
     if (pid == 0) {
       if (i > 0)
-        dup2(pipes[i - 1][0], STDIN_FILENO);
+        if (dup2(pipes[i - 1][0], STDIN_FILENO) == -1) {
+          perror("dup2");
+          exit(EXIT_FAILURE);
+        }
       if (i < commands_amount - 1)
-        dup2(pipes[i][1], STDOUT_FILENO);
+        if (dup2(pipes[i][1], STDOUT_FILENO) == -1) {
+          perror("dup2");
+          exit(EXIT_FAILURE);
+        }
 
       // close all origional pipes since dup2 duplicates them
       for (int j = 0; j < pipes_amount; j++) {
@@ -284,7 +304,10 @@ void wait_for_children(int commands_amount) {
   int status;
   // waits for all children
   for (int i = 0; i < commands_amount; i++) {
-    wait(&status);
+    if (wait(&status) == -1) {
+      perror("wait");
+      exit(EXIT_FAILURE);
+    }
     // checks exitcodes for all children
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
       exit(EXIT_FAILURE);
