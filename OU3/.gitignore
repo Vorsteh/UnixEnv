@@ -1,0 +1,12 @@
+*.o
+*.obj
+
+mdu
+mdu.exe
+*.out
+*.elf
+
+*.swp
+*.bak
+*.tmp
+*.log
