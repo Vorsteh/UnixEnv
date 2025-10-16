@@ -48,7 +48,35 @@ void queue_destory(struct queue *q) {
   free(q->paths);
 }
 
-int queue_grow(struct queue *q) { return 0; }
+int queue_grow(struct queue *q) {
+  // Set new_capcaity to either be double the old or default it to 8 if old
+  // capacity was 0
+  size_t new_capcaity;
+  if (q->capacity != 0)
+    new_capcaity = q->capacity * 2;
+  else
+    new_capcaity = 8;
+
+  // Create array of path_node
+  struct path_node *n = calloc(new_capcaity, sizeof(struct path_node));
+  if (!n)
+    return -1;
+
+  // Loop through old paths and add them to new array in logical order
+  for (size_t i = 0; i < q->size; i++) {
+    size_t idx = (q->head + i) % q->capacity;
+    n[i] = q->paths[idx];
+  }
+
+  // Free old paths and set all new data
+  free(q->paths);
+  q->paths = n;
+  q->capacity = new_capcaity;
+  q->head = 0;
+  q->tail = q->size % new_capcaity;
+
+  return 0;
+}
 
 int queue_push(struct queue *q, char *path) {
   // Check if queue is full, if so make queue larger
@@ -63,6 +91,19 @@ int queue_push(struct queue *q, char *path) {
   q->size++;
 
   return 0;
+}
+
+char *queue_pop(struct queue *q) {
+  if (q->size == 0)
+    return NULL;
+
+  // Save path of head and set it to NULL then update head position and size
+  char *path = q->paths[q->head].path;
+  q->paths[q->head].path = NULL;
+  q->head = (q->head + 1) % q->capacity;
+  q->size--;
+
+  return path;
 }
 
 int main(int argc, char *argv[]) {
