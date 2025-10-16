@@ -48,6 +48,23 @@ void queue_destory(struct queue *q) {
   free(q->paths);
 }
 
+int queue_grow(struct queue *q) { return 0; }
+
+int queue_push(struct queue *q, char *path) {
+  // Check if queue is full, if so make queue larger
+  if (q->size + 1 > q->capacity) {
+    if (queue_grow(q) != 0)
+      return -1;
+  }
+
+  // Add path to queue paths and update tail and size
+  q->paths[q->tail].path = path;
+  q->tail = (q->tail + 1) % q->capacity;
+  q->size++;
+
+  return 0;
+}
+
 int main(int argc, char *argv[]) {
 
   int num_threads = 1;
