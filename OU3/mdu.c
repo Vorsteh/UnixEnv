@@ -106,6 +106,23 @@ char *queue_pop(struct queue *q) {
   return path;
 }
 
+char *create_path(const char *base, const char *name) {
+  size_t base_len = strlen(base);
+  size_t name_len = strlen(name);
+
+  size_t total_len = base_len + name_len + 2;
+
+  char *final_path = malloc(total_len);
+  if (!final_path)
+    return NULL;
+  if (base_len > 0 && base[base_len - 1] == '/')
+    snprintf(final_path, total_len, "%s%s", base, name);
+  else
+    snprintf(final_path, total_len, "%s/%s", base, name);
+
+  return final_path;
+}
+
 int main(int argc, char *argv[]) {
 
   int num_threads = 1;
