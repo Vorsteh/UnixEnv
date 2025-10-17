@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
   int num_threads = 1;
 
   int c;
-  while ((c = getopt(argc, argv, "f:")) != -1) {
+  while ((c = getopt(argc, argv, "j:")) != -1) {
     switch (c) {
     case 'j': {
       // Convert and check that arguemnts are valid
