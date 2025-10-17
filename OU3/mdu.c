@@ -1,5 +1,4 @@
 
-#include <errno.h>
 #include <getopt.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -40,6 +39,8 @@ char *create_path(const char *base, const char *name);
 void *calculate_path_size(void *arg);
 int create_threads(pthread_t *threads, int num_threads, struct state *s);
 int process_path(const char *path, int num_threads);
+
+long long get_file_size(const char *path);
 
 int main(int argc, char *argv[]) {
 
@@ -201,19 +202,28 @@ int create_threads(pthread_t *threads, int num_threads, struct state *s) {
   return 0;
 }
 
-int process_path(const char *path, int num_threads) {
-
-  // Setup stat
+long long get_file_size(const char *path) {
   struct stat st;
   if (lstat(path, &st) != 0) {
     perror("lstat");
-    return EXIT_FAILURE;
+    return -1;
   }
 
-  // Check if it is not a directory -> file, then check size
-  if (!S_ISDIR(st.st_mode)) {
-    long long blocks = (long long)st.st_blocks;
-    printf("%lld\t%s\n", blocks, path);
+  if (S_ISDIR(st.st_mode)) {
+    return -1;
+  }
+
+  return (long long)st.st_blocks;
+}
+
+int setup_state(struct state *s) { return 0; }
+
+int process_path(const char *path, int num_threads) {
+
+  long long size = get_file_size(path);
+
+  if (size > 0) {
+    printf("%lld\t%s\n", size, path);
     return 0;
   }
 
