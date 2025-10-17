@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 // STRUCTS
@@ -28,6 +29,8 @@ struct state {
 
   pthread_mutex_t mutex;
   pthread_cond_t cond;
+
+  int shutdown;
 };
 
 int queue_init(struct queue *q, size_t start_capacity);
@@ -41,6 +44,9 @@ int create_threads(pthread_t *threads, int num_threads, struct state *s);
 int process_path(const char *path, int num_threads);
 
 long long get_file_size(const char *path);
+void destroy_resources(struct state *s);
+int setup_state(struct state *s);
+void shutdown_threads(struct state *s);
 
 int main(int argc, char *argv[]) {
 
@@ -75,7 +81,7 @@ int main(int argc, char *argv[]) {
   int exit_status = EXIT_SUCCESS;
   for (int i = optind; i < argc; i++) {
     if (process_path(argv[i], num_threads) != 0) {
-      // Set exit status but continue
+      // Set exit status but continue with all files
       exit_status = EXIT_FAILURE;
       continue;
     }
@@ -91,7 +97,9 @@ int queue_init(struct queue *q, size_t start_capacity) {
     return -1;
   q->capacity = start_capacity;
   // Init all values to 0
-  q->head = q->tail = q->size = 0;
+  q->head = 0;
+  q->tail = 0;
+  q->size = 0;
 
   return 0;
 }
@@ -216,7 +224,47 @@ long long get_file_size(const char *path) {
   return (long long)st.st_blocks;
 }
 
-int setup_state(struct state *s) { return 0; }
+void destroy_resources(struct state *s) {
+  if (!s)
+    return;
+  if (s->queue.paths)
+    queue_destroy(&s->queue);
+
+  pthread_mutex_destroy(&s->mutex);
+  pthread_cond_destroy(&s->cond);
+}
+
+int setup_state(struct state *s) {
+  int err;
+
+  if ((err = pthread_mutex_init(&s->mutex, NULL)) != 0) {
+    fprintf(stderr, "pthread_mutex_init: %s\n", strerror(err));
+    return EXIT_FAILURE;
+  }
+
+  if ((err = pthread_cond_init(&s->cond, NULL)) != 0) {
+    fprintf(stderr, "pthread_cond_init: %s\n", strerror(err));
+    return EXIT_FAILURE;
+  }
+
+  if (queue_init(&s->queue, 16) != 0) {
+    fprintf(stderr, "queue_init failed\n");
+    destroy_resources(s);
+    return EXIT_FAILURE;
+  }
+
+  s->total_blocks = 0;
+  s->pending_dirs = 0;
+
+  return 0;
+}
+
+void shutdown_threads(struct state *s) {
+  pthread_mutex_lock(&s->mutex);
+  s->shutdown = 1;
+  pthread_cond_broadcast(&s->cond);
+  pthread_mutex_unlock(&s->mutex);
+}
 
 int process_path(const char *path, int num_threads) {
 
@@ -228,15 +276,15 @@ int process_path(const char *path, int num_threads) {
   }
 
   struct state s;
-  // Init mutex and cond
-
-  // Setup state queue
+  setup_state(&s);
 
   // Create Threads
   pthread_t *threads = calloc((size_t)num_threads, sizeof(pthread_t));
   if (!threads) {
     perror("calloc");
     // TODO: handle fail
+    shutdown_threads(&s);
+    destroy_resources(&s);
 
     return EXIT_FAILURE;
   }
@@ -251,6 +299,8 @@ int process_path(const char *path, int num_threads) {
     pthread_join(threads[i], NULL);
   }
   free(threads);
+
+  printf("%lld\t%s\n", (long long)32, path);
 
   return 0;
 }
