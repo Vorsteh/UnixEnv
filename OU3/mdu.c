@@ -31,6 +31,58 @@ struct state {
   pthread_cond_t cond;
 };
 
+int queue_init(struct queue *q, size_t start_capacity);
+void queue_destroy(struct queue *q);
+int queue_grow(struct queue *q);
+int queue_push(struct queue *q, char *path);
+char *queue_pop(struct queue *q);
+char *create_path(const char *base, const char *name);
+void *calculate_path_size(void *arg);
+int create_threads(pthread_t *threads, int num_threads, struct state *s);
+int process_path(const char *path, int num_threads);
+
+int main(int argc, char *argv[]) {
+
+  int num_threads = 1;
+
+  int c;
+  while ((c = getopt(argc, argv, "f:")) != -1) {
+    switch (c) {
+    case 'j': {
+      // Convert and check that arguemnts are valid
+      char *end;
+      long value = strtol(optarg, &end, 10);
+      if (end == optarg || value <= 0) {
+        fprintf(stderr, "Invalid thread count for -j: %s\n", optarg);
+        return EXIT_FAILURE;
+      }
+
+      num_threads = (int)value;
+      break;
+    }
+    default:
+      fprintf(stderr, "Usage: %s [-j antal_trådar] fil ...\n", argv[0]);
+    }
+  }
+
+  // Check that usage is correct
+  if (optind >= argc) {
+    fprintf(stderr, "Usage: %s [-j antal_trådar] fil ...\n", argv[0]);
+    return EXIT_FAILURE;
+  }
+
+  int exit_status = EXIT_SUCCESS;
+  for (int i = optind; i < argc; i++) {
+    if (process_path(argv[i], num_threads) != 0) {
+      // Set exit status but continue
+      exit_status = EXIT_FAILURE;
+      continue;
+    }
+  }
+
+  return exit_status;
+}
+
 int queue_init(struct queue *q, size_t start_capacity) {
   // Allocate memory for queue paths and check if successfull
   q->paths = calloc(start_capacity, sizeof(struct path_node));
@@ -43,7 +95,7 @@ int queue_init(struct queue *q, size_t start_capacity) {
   return 0;
 }
 
-void queue_destory(struct queue *q) {
+void queue_destroy(struct queue *q) {
   if (!q)
     return;
 
@@ -137,7 +189,7 @@ char *create_path(const char *base, const char *name) {
   return final_path;
 }
 
-void *calculate_path_size(void *arg);
+void *calculate_path_size(void *arg) { return arg; }
 
 int create_threads(pthread_t *threads, int num_threads, struct state *s) {
   for (int i = 0; i < num_threads; i++) {
@@ -149,8 +201,7 @@ int create_threads(pthread_t *threads, int num_threads, struct state *s) {
   return 0;
 }
 
-int process_paths(const char *path, int num_threads) {
-  struct state s;
+int process_path(const char *path, int num_threads) {
 
   // Setup stat
   struct stat st;
@@ -162,10 +213,11 @@ int process_paths(const char *path, int num_threads) {
   // Check if it is not a directory -> file, then check size
   if (!S_ISDIR(st.st_mode)) {
     long long blocks = (long long)st.st_blocks;
-    printf("%lld\t%s", blocks, path);
-    s.total_blocks += blocks;
+    printf("%lld\t%s\n", blocks, path);
     return 0;
   }
+
+  struct state s;
   // Init mutex and cond
 
   // Setup state queue
@@ -191,40 +243,4 @@ int process_paths(const char *path, int num_threads) {
   free(threads);
 
   return 0;
-}
-
-int main(int argc, char *argv[]) {
-
-  int num_threads = 1;
-
-  int c;
-  while ((c = getopt(argc, argv, "f:")) != -1) {
-    switch (c) {
-    case 'j': {
-      // Convert and check that arguemnts are valid
-      char *end;
-      long value = strtol(optarg, &end, 10);
-      if (end == optarg || value <= 0) {
-        fprintf(stderr, "Invalid thread count for -j: %s\n", optarg);
-        return EXIT_FAILURE;
-      }
-
-      num_threads = (int)value;
-      break;
-    }
-    default:
-      fprintf(stderr, "Usage: %s [-j antal_trådar] fil ...\n", argv[0]);
-    }
-  }
-
-  // Check that usage is correct
-  if (optind >= argc) {
-    fprintf(stderr, "Usage: %s [-j antal_trådar] fil ...\n", argv[0]);
-    return EXIT_FAILURE;
-  }
-
-  for (int i = optind; i < argc; i++) {
-  }
-
-  return EXIT_SUCCESS;
 }
