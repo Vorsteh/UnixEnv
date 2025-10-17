@@ -1,6 +1,7 @@
 
 #include <errno.h>
 #include <getopt.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +20,12 @@ struct queue {
   size_t tail;
   size_t capacity;
   size_t size;
+};
+
+struct state {
+  struct queue queue;
+  size_t pending_dirs;
+  long long total_blocks;
 };
 
 int queue_init(struct queue *q, size_t start_capacity) {
@@ -110,17 +117,49 @@ char *create_path(const char *base, const char *name) {
   size_t base_len = strlen(base);
   size_t name_len = strlen(name);
 
+  // Calculate needed length of paths joined
   size_t total_len = base_len + name_len + 2;
 
   char *final_path = malloc(total_len);
   if (!final_path)
     return NULL;
+
+  // If base length is valid and ends with a '/' we canjust add them directly
+  // else we add '/' ourselves
   if (base_len > 0 && base[base_len - 1] == '/')
     snprintf(final_path, total_len, "%s%s", base, name);
   else
     snprintf(final_path, total_len, "%s/%s", base, name);
 
   return final_path;
+}
+
+void *calculate_path_size(void *arg);
+
+int create_threads(pthread_t *threads, int num_threads, struct state *s) {
+  for (int i = 0; i < num_threads; i++) {
+    int ret = pthread_create(&threads[i], NULL, calculate_path_size, &s);
+    if (ret != 0)
+      return ret;
+  }
+
+  return 0;
+}
+
+int process_paths(const char *path, int num_threads) {
+  pthread_t *threads = calloc((size_t)num_threads, sizeof(pthread_t));
+  if (!threads) {
+    perror("calloc");
+    // TODO: handle fail
+
+    return EXIT_FAILURE;
+  }
+
+  if (create_threads(threads, num_threads, &s) != 0) {
+    // TODO: Handle error
+  }
+
+  return 0;
 }
 
 int main(int argc, char *argv[]) {
