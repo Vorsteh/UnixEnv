@@ -26,6 +26,9 @@ struct state {
   struct queue queue;
   size_t pending_dirs;
   long long total_blocks;
+
+  pthread_mutex_t mutex;
+  pthread_cond_t cond;
 };
 
 int queue_init(struct queue *q, size_t start_capacity) {
@@ -147,6 +150,27 @@ int create_threads(pthread_t *threads, int num_threads, struct state *s) {
 }
 
 int process_paths(const char *path, int num_threads) {
+  struct state s;
+
+  // Setup stat
+  struct stat st;
+  if (lstat(path, &st) != 0) {
+    perror("lstat");
+    return EXIT_FAILURE;
+  }
+
+  // Check if it is not a directory -> file, then check size
+  if (!S_ISDIR(st.st_mode)) {
+    long long blocks = (long long)st.st_blocks;
+    printf("%lld\t%s", blocks, path);
+    s.total_blocks += blocks;
+    return 0;
+  }
+  // Init mutex and cond
+
+  // Setup state queue
+
+  // Create Threads
   pthread_t *threads = calloc((size_t)num_threads, sizeof(pthread_t));
   if (!threads) {
     perror("calloc");
@@ -157,7 +181,14 @@ int process_paths(const char *path, int num_threads) {
 
   if (create_threads(threads, num_threads, &s) != 0) {
     // TODO: Handle error
+    perror("pthread_create");
   }
+
+  // Cleanup
+  for (int i = 0; i < num_threads; i++) {
+    pthread_join(threads[i], NULL);
+  }
+  free(threads);
 
   return 0;
 }
