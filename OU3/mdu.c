@@ -1,4 +1,5 @@
 
+#include <errno.h>
 #include <getopt.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -198,16 +199,46 @@ char *create_path(const char *base, const char *name) {
   return final_path;
 }
 
-void *calculate_path_size(void *arg) { return arg; }
+void *calculate_path_size(void *arg) {
+  struct state *s = (struct state *)arg;
+
+  while (true) {
+    // Wait for work and shutdown if flag is active
+    pthread_mutex_lock(&s->mutex);
+    while (s->queue.size == 0 && !s->shutdown && s->pending_dirs > 0) {
+      pthread_cond_wait(&s->cond, &s->mutex);
+    }
+
+    if (s->queue.size == 0 && s->pending_dirs == 0) {
+      pthread_mutex_unlock(&s->mutex);
+      break;
+    }
+
+    if (s->shutdown) {
+      pthread_mutex_unlock(&s->mutex);
+      break;
+    }
+
+    // Get first entry in queue
+    char *path = queue_pop(&s->queue);
+    pthread_mutex_unlock(&s->mutex);
+
+    // Skip this queue entry
+    if (!path)
+      continue;
+  }
+}
 
 int create_threads(pthread_t *threads, int num_threads, struct state *s) {
+  int created_threads = 0;
   for (int i = 0; i < num_threads; i++) {
     int ret = pthread_create(&threads[i], NULL, calculate_path_size, &s);
     if (ret != 0)
-      return ret;
+      return created_threads;
+    created_threads++;
   }
 
-  return 0;
+  return created_threads;
 }
 
 long long get_file_size(const char *path) {
@@ -225,6 +256,7 @@ long long get_file_size(const char *path) {
 }
 
 void destroy_resources(struct state *s) {
+  // Destroyes all resouces in state
   if (!s)
     return;
   if (s->queue.paths)
@@ -237,16 +269,20 @@ void destroy_resources(struct state *s) {
 int setup_state(struct state *s) {
   int err;
 
+  // Setup mutex
   if ((err = pthread_mutex_init(&s->mutex, NULL)) != 0) {
     fprintf(stderr, "pthread_mutex_init: %s\n", strerror(err));
     return EXIT_FAILURE;
   }
 
+  // Setup cond
   if ((err = pthread_cond_init(&s->cond, NULL)) != 0) {
     fprintf(stderr, "pthread_cond_init: %s\n", strerror(err));
+    pthread_mutex_destroy(&s->mutex);
     return EXIT_FAILURE;
   }
 
+  // Setup queue
   if (queue_init(&s->queue, 16) != 0) {
     fprintf(stderr, "queue_init failed\n");
     destroy_resources(s);
@@ -270,28 +306,64 @@ int process_path(const char *path, int num_threads) {
 
   long long size = get_file_size(path);
 
+  // If it is a normal file we will print the size and return. If not we
+  // continue with the program meaning it is a directory
   if (size > 0) {
     printf("%lld\t%s\n", size, path);
     return 0;
   }
 
   struct state s;
-  setup_state(&s);
+  if (setup_state(&s) != 0)
+    return EXIT_FAILURE;
+
+  struct stat st;
+  if (lstat(path, &st) != 0) {
+    fprintf(stderr, "mdu: lstat failed for: %s", path);
+    destroy_resources(&s);
+    return EXIT_FAILURE;
+  }
+
+  char *start_path = strdup(path);
+  if (!start_path) {
+    fprintf(stderr, "mdu: strdup failed\n");
+    destroy_resources(&s);
+    return EXIT_FAILURE;
+  }
+
+  if (queue_push(&s.queue, start_path) != 0) {
+    fprintf(stderr, "mdu: couldnt push to queue\n");
+    free(start_path);
+    destroy_resources(&s);
+    return EXIT_FAILURE;
+  }
+
+  s.pending_dirs = 1;
 
   // Create Threads
   pthread_t *threads = calloc((size_t)num_threads, sizeof(pthread_t));
   if (!threads) {
     perror("calloc");
-    // TODO: handle fail
-    shutdown_threads(&s);
     destroy_resources(&s);
 
     return EXIT_FAILURE;
   }
-
-  if (create_threads(threads, num_threads, &s) != 0) {
+  int ret;
+  if ((ret = create_threads(threads, num_threads, &s)) != 0) {
     // TODO: Handle error
+    fprintf(stderr, "pthread_create: %s\n", strerror(errno));
+    pthread_mutex_lock(&s.mutex);
+    s.shutdown = 1;
+    pthread_cond_broadcast(&s.cond);
+    pthread_mutex_unlock(&s.mutex);
+
+    // Join the threads created by create_threads
+    for (int i = 0; i < ret; i++) {
+      pthread_join(threads[i], NULL);
+    }
+
     perror("pthread_create");
+    destroy_resources(&s);
   }
 
   // Cleanup
@@ -300,7 +372,9 @@ int process_path(const char *path, int num_threads) {
   }
   free(threads);
 
-  printf("%lld\t%s\n", (long long)32, path);
+  printf("%lld\t%s\n", s.total_blocks, path);
+
+  destroy_resources(&s);
 
   return 0;
 }
