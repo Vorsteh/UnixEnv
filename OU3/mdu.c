@@ -1,4 +1,5 @@
 
+#include <dirent.h>
 #include <errno.h>
 #include <getopt.h>
 #include <pthread.h>
@@ -7,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -226,19 +228,70 @@ void *calculate_path_size(void *arg) {
     // Skip this queue entry
     if (!path)
       continue;
-  }
-}
 
-int create_threads(pthread_t *threads, int num_threads, struct state *s) {
-  int created_threads = 0;
-  for (int i = 0; i < num_threads; i++) {
-    int ret = pthread_create(&threads[i], NULL, calculate_path_size, &s);
-    if (ret != 0)
-      return created_threads;
-    created_threads++;
+    DIR *dir = opendir(path);
+    if (!dir) {
+      perror("opendir");
+      pthread_mutex_lock(&s->mutex);
+      s->pending_dirs--;
+      if (s->pending_dirs == 0)
+        pthread_cond_broadcast(&s->cond);
+      free(path);
+      // Continue with other directories
+      continue;
+    }
+
+    // Create dirent struct
+    struct dirent *ent;
+
+    while ((ent = readdir(dir)) != NULL) {
+      const char *ent_name = ent->d_name;
+      if (strcmp(ent_name, ".") == 0 || strcmp(ent_name, "..") == 0) {
+        continue;
+      }
+
+      char *full_name = create_path(path, ent_name);
+      if (!full_name) {
+        fprintf(stderr, "mdu: merory allocation failed");
+        continue;
+      }
+
+      // Get file size and add to total_blocks if not its a directory and we
+      // continue
+      long long size = get_file_size(full_name);
+
+      if (size > 0) {
+        s->total_blocks += size;
+        free(full_name);
+        continue;
+      }
+
+      // Add the directory to the queue
+      pthread_mutex_lock(&s->mutex);
+      if (queue_push(&s->queue, full_name) != 0) {
+        fprintf(stderr, "mdu: failed to add %s to queue", full_name);
+        free(full_name);
+        s->pending_dirs--;
+      } else {
+        s->pending_dirs++;
+        pthread_cond_signal(&s->cond);
+      }
+      pthread_mutex_unlock(&s->mutex);
+    }
+
+    closedir(dir);
+
+    pthread_mutex_lock(&s->mutex);
+
+    s->pending_dirs--;
+    if (s->pending_dirs == 0)
+      pthread_cond_broadcast(&s->cond);
+    pthread_mutex_unlock(&s->mutex);
+
+    free(path);
   }
 
-  return created_threads;
+  return NULL;
 }
 
 long long get_file_size(const char *path) {
@@ -348,22 +401,21 @@ int process_path(const char *path, int num_threads) {
 
     return EXIT_FAILURE;
   }
-  int ret;
-  if ((ret = create_threads(threads, num_threads, &s)) != 0) {
-    // TODO: Handle error
-    fprintf(stderr, "pthread_create: %s\n", strerror(errno));
-    pthread_mutex_lock(&s.mutex);
-    s.shutdown = 1;
-    pthread_cond_broadcast(&s.cond);
-    pthread_mutex_unlock(&s.mutex);
 
-    // Join the threads created by create_threads
-    for (int i = 0; i < ret; i++) {
-      pthread_join(threads[i], NULL);
+  int threads_created = 0;
+  for (int i = 0; i < num_threads; i++) {
+    int ret = pthread_create(&threads[i], NULL, calculate_path_size, &s);
+    if (ret != 0) {
+      fprintf(stderr, "pthread_create: %s\n", strerror(ret));
+      shutdown_threads(&s);
+      for (int j = 0; j < threads_created; j++) {
+        pthread_join(threads[j], NULL);
+      }
+      destroy_resources(&s);
+      free(threads);
+      return EXIT_FAILURE;
     }
-
-    perror("pthread_create");
-    destroy_resources(&s);
+    threads_created++;
   }
 
   // Cleanup
