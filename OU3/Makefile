@@ -1,8 +1,8 @@
 CC = gcc
-CFLAGS =-g -std=gnu11 -Werror -Wall -Wextra -Wpedantic -Wmissing-declarations -Wmissing-prototypes -Wold-style-definition
+CFLAGS = -g -std=gnu11 -Werror -Wall -Wextra -Wpedantic -Wmissing-declarations -Wmissing-prototypes -Wold-style-definition
 LDFLAGS = -pthread
 
-SRCS = mdu.c
+SRCS = mdu.c queue.c
 OBJS = $(SRCS:.c=.o)
 TARGET = mdu
 
@@ -16,5 +16,3 @@ $(TARGET): $(OBJS)
 
 clean:
 	rm -f $(OBJS) $(TARGET)
-
-
